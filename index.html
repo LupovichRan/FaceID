@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#2563eb">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ID Photo">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>ID Photo Maker</title>
+<style>
+  :root { --bg:#f4f5f7; --card:#fff; --ink:#1c1e21; --muted:#6b7280; --accent:#2563eb; --line:#e5e7eb; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#111418; --card:#1b1f26; --ink:#eef0f3; --muted:#9aa3af; --accent:#60a5fa; --line:#2b313a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:16px; text-align:center; }
+  h1 { margin:0; font-size:20px; }
+  header p { margin:4px 0 0; color:var(--muted); font-size:13px; }
+  main { max-width:900px; margin:0 auto; padding:0 16px 32px; display:grid; gap:16px; grid-template-columns:1fr; }
+  @media (min-width:760px) { main { grid-template-columns:auto 1fr; align-items:start; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  #stage { display:flex; flex-direction:column; align-items:center; gap:8px; }
+  canvas#view { max-width:100%; touch-action:none; cursor:grab; border:1px solid var(--line); border-radius:6px; background:#fff; }
+  canvas#view:active { cursor:grabbing; }
+  .hint { color:var(--muted); font-size:12px; text-align:center; }
+  label { display:block; margin:12px 0 4px; font-weight:600; font-size:13px; }
+  select, input[type=range] { width:100%; }
+  select { padding:8px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); }
+  .row { display:flex; gap:8px; flex-wrap:wrap; }
+  .swatch { width:34px; height:34px; border-radius:50%; border:2px solid var(--line); cursor:pointer; padding:0; }
+  .swatch.on { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent); }
+  button, .btn { appearance:none; border:0; background:var(--accent); color:#fff; padding:10px 14px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; }
+  button.secondary { background:transparent; color:var(--ink); border:1px solid var(--line); }
+  button:disabled { opacity:.5; cursor:default; }
+  #drop { border:2px dashed var(--line); border-radius:12px; padding:28px 12px; text-align:center; color:var(--muted); cursor:pointer; }
+  #drop.over { border-color:var(--accent); }
+  .privacy { font-size:12px; color:var(--muted); margin-top:12px; }
+  #status { font-size:12px; color:var(--muted); min-height:16px; margin-top:6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>ID Photo Maker</h1>
+  <p>Upload a face photo, frame it, pick a background and size, then download. Everything runs in your browser.</p>
+</header>
+
+<main>
+  <section class="card" id="stage">
+    <canvas id="view"></canvas>
+    <div class="hint">Drag to move · scroll or use the slider to zoom · align your face with the guide</div>
+  </section>
+
+  <section class="card">
+    <div id="drop">Click, drop, or take a photo<input id="file" type="file" accept="image/*" hidden></div>
+
+    <label for="preset">Photo size</label>
+    <select id="preset">
+      <option value="35,45">Passport / ID – 35 × 45 mm (EU, IL, UK, AU…)</option>
+      <option value="50,50">Israeli passport / visa – 50 × 50 mm</option>
+      <option value="51,51">US passport / visa – 2 × 2 in</option>
+      <option value="33,48">China – 33 × 48 mm</option>
+      <option value="40,50">India / Canada – 40 × 50 mm</option>
+      <option value="30,40">Small ID – 30 × 40 mm</option>
+      <option value="25,30">Mini – 25 × 30 mm</option>
+    </select>
+
+    <label>Background</label>
+    <div class="row" id="swatches"></div>
+
+    <label for="cloth">Clothing</label>
+    <select id="cloth">
+      <option value="none">Keep my own clothes</option>
+      <option value="suit">Suit jacket, shirt &amp; tie</option>
+      <option value="shirt">Collared shirt</option>
+      <option value="tee">Crew-neck top</option>
+    </select>
+    <div id="clothOpts" hidden>
+      <div class="row" style="margin-top:8px;align-items:center">
+        <input id="clothColor" type="color" value="#1f2a44" title="Clothing colour" style="width:44px;height:34px;padding:0;border:0;background:none">
+        <button id="aifit" class="secondary" disabled>✨ Auto-fit with AI</button>
+      </div>
+      <label for="ny">Neckline height</label>
+      <input id="ny" type="range" min="0.55" max="0.95" step="0.005" value="0.78">
+      <label for="nw">Neck width</label>
+      <input id="nw" type="range" min="0.15" max="0.6" step="0.005" value="0.32">
+    </div>
+
+    <label for="zoom">Zoom</label>
+    <input id="zoom" type="range" min="0.3" max="4" step="0.01" value="1">
+    <label for="rot">Rotate <span id="rotv">0°</span></label>
+    <input id="rot" type="range" min="-15" max="15" step="0.5" value="0">
+    <label for="bri">Brightness</label>
+    <input id="bri" type="range" min="0.7" max="1.3" step="0.01" value="1">
+
+    <div class="row" style="margin-top:14px">
+      <button id="rmbg" class="secondary" disabled>Remove background (AI)</button>
+      <button id="reset" class="secondary" disabled>Reset</button>
+    </div>
+    <div id="status"></div>
+
+    <div class="row" style="margin-top:14px">
+      <button id="dl" disabled>Download photo (PNG)</button>
+      <button id="sheet" class="secondary" disabled>Download 4×6 print sheet</button>
+    </div>
+
+    <p class="privacy">Your photo never leaves this device. Official IDs have strict rules (neutral expression, no glasses, plain background) – check your issuing authority's requirements.</p>
+  </section>
+</main>
+
+<script>
+const DPI = 300, mmToPx = mm => Math.round(mm / 25.4 * DPI);
+const $ = id => document.getElementById(id);
+const view = $('view'), vctx = view.getContext('2d');
+const COLORS = ['#ffffff', '#e8eef7', '#3a6fd8', '#d9d9d9', '#c8102e'];
+const state = { cloth:'none', clothColor:'#1f2a44', ny:0.78, nw:0.32, img:null, bg:COLORS[0], x:0, y:0, zoom:1, rot:0, bri:1, mm:[35,45], baseScale:1 };
+
+// ---- UI setup
+const sw = $('swatches');
+COLORS.forEach(c => {
+  const b = document.createElement('button');
+  b.className = 'swatch' + (c === state.bg ? ' on' : '');
+  b.style.background = c; b.title = c; b.type = 'button';
+  b.onclick = () => { state.bg = c; [...sw.children].forEach(x => x.classList.toggle('on', x === b)); draw(); };
+  sw.appendChild(b);
+});
+
+function setSize() {
+  state.mm = $('preset').value.split(',').map(Number);
+  const [w, h] = state.mm;
+  // preview is capped at ~420px tall
+  const scale = Math.min(1, 420 / mmToPx(h));
+  view.width = Math.round(mmToPx(w) * scale);
+  view.height = Math.round(mmToPx(h) * scale);
+  fit(); draw();
+}
+
+function fit() {
+  if (!state.img) return;
+  // cover the frame width with the head-and-shoulders region
+  state.baseScale = Math.max(view.width / state.img.width, view.height / state.img.height);
+  state.x = 0; state.y = 0; state.zoom = 1; state.rot = 0; state.bri = 1;
+  $('zoom').value = 1; $('rot').value = 0; $('bri').value = 1; $('rotv').textContent = '0°';
+}
+
+// ---- Rendering
+function render(ctx, w, h, guide) {
+  ctx.fillStyle = state.bg; ctx.fillRect(0, 0, w, h);
+  if (state.img) {
+    const k = w / view.width; // preview -> output scale
+    ctx.save();
+    ctx.translate(w / 2 + state.x * k, h / 2 + state.y * k);
+    ctx.rotate(state.rot * Math.PI / 180);
+    const s = state.baseScale * state.zoom * k;
+    ctx.scale(s, s);
+    ctx.filter = `brightness(${state.bri})`;
+    ctx.drawImage(state.img, -state.img.width / 2, -state.img.height / 2);
+    ctx.restore();
+  }
+  if (state.cloth !== 'none') drawClothes(ctx, w, h);
+  if (guide) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(37,99,235,.9)'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]);
+    // head oval: ~70-80% of photo height, centred slightly above middle
+    ctx.beginPath();
+    ctx.ellipse(w / 2, h * 0.45, w * 0.28, h * 0.30, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, h * 0.40); ctx.lineTo(w, h * 0.40); ctx.stroke(); // eye line
+    ctx.restore();
+  }
+}
+// ---- Clothing overlay: the neck opening is cut out so your own neck shows through
+function shade(hex, f) {
+  const n = parseInt(hex.slice(1), 16);
+  const c = s => Math.max(0, Math.min(255, Math.round(((n >> s) & 255) * f)));
+  return `rgb(${c(16)},${c(8)},${c(0)})`;
+}
+function drawClothes(ctx, w, h) {
+  const cx = w / 2, top = state.ny * h, nw = state.nw * w, hn = nw / 2, col = state.clothColor;
+  const sh = top + 0.10 * h;                       // shoulder edge height
+  const body = (vDepth) => {                       // vDepth = 0 -> round neck, else V depth
+    ctx.beginPath();
+    ctx.moveTo(0, h); ctx.lineTo(0, sh);
+    ctx.quadraticCurveTo(cx - nw * 1.4, top + 0.03 * h, cx - hn * 1.1, top);
+    if (vDepth) ctx.lineTo(cx, top + vDepth);
+    else ctx.quadraticCurveTo(cx, top + nw * 0.95, cx + hn * 1.1, top);
+    if (vDepth) ctx.lineTo(cx + hn * 1.1, top);
+    ctx.quadraticCurveTo(cx + nw * 1.4, top + 0.03 * h, w, sh);
+    ctx.lineTo(w, h); ctx.closePath();
+  };
+  ctx.save();
+  if (state.cloth === 'suit') {
+    const vy = top + nw * 1.7;
+    ctx.fillStyle = '#f5f5f5';                     // shirt
+    ctx.beginPath(); ctx.moveTo(cx - hn * 1.1, top); ctx.lineTo(cx + hn * 1.1, top); ctx.lineTo(cx, vy + 0.05 * h); ctx.fill();
+    ctx.fillStyle = '#8b1e2d';                     // tie
+    ctx.beginPath(); ctx.moveTo(cx - hn * 0.22, top + nw * 0.55); ctx.lineTo(cx + hn * 0.22, top + nw * 0.55);
+    ctx.lineTo(cx + hn * 0.32, h); ctx.lineTo(cx - hn * 0.32, h); ctx.fill();
+    ctx.fillRect(cx - hn * 0.26, top + nw * 0.42, hn * 0.52, nw * 0.2);
+    ctx.fillStyle = col; body(nw * 1.7); ctx.fill();   // jacket
+    ctx.strokeStyle = shade(col, 1.5); ctx.lineWidth = Math.max(1, w * 0.004);
+    ctx.beginPath(); ctx.moveTo(cx - hn * 1.1, top); ctx.lineTo(cx, vy); ctx.lineTo(cx + hn * 1.1, top); ctx.stroke();
+    ctx.fillStyle = '#f5f5f5';                     // collar flaps
+    for (const s of [-1, 1]) {
+      ctx.beginPath(); ctx.moveTo(cx + s * hn * 1.1, top); ctx.lineTo(cx + s * hn * 0.3, top + nw * 0.45); ctx.lineTo(cx + s * hn * 0.95, top + nw * 0.55); ctx.fill();
+    }
+  } else if (state.cloth === 'shirt') {
+    ctx.fillStyle = col; body(nw * 0.9); ctx.fill();
+    ctx.fillStyle = shade(col, 1.25);
+    for (const s of [-1, 1]) {
+      ctx.beginPath(); ctx.moveTo(cx + s * hn * 1.1, top - nw * 0.12); ctx.lineTo(cx + s * hn * 0.05, top + nw * 0.8); ctx.lineTo(cx + s * hn * 1.0, top + nw * 0.55); ctx.closePath(); ctx.fill();
+    }
+    ctx.strokeStyle = shade(col, 0.7); ctx.lineWidth = Math.max(1, w * 0.004);
+    ctx.beginPath(); ctx.moveTo(cx, top + nw * 0.8); ctx.lineTo(cx, h); ctx.stroke();
+  } else {
+    ctx.fillStyle = col; body(0); ctx.fill();
+    ctx.strokeStyle = shade(col, 0.75); ctx.lineWidth = Math.max(2, w * 0.012);
+    ctx.beginPath(); ctx.moveTo(cx - hn * 1.1, top); ctx.quadraticCurveTo(cx, top + nw * 0.95, cx + hn * 1.1, top); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function draw() { render(vctx, view.width, view.height, true); }
+
+// ---- Loading images
+function loadFile(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    state.img = img; fit(); draw();
+    ['dl', 'sheet', 'reset', 'rmbg'].forEach(i => $(i).disabled = false);
+    if ($('aifit').dataset.ready) $('aifit').disabled = false;
+    $('drop').firstChild.textContent = 'Photo loaded – click to replace';
+  };
+  img.src = url;
+}
+$('drop').onclick = () => $('file').click();
+$('file').onchange = e => loadFile(e.target.files[0]);
+['dragover', 'dragenter'].forEach(ev => $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.add('over'); }));
+['dragleave', 'drop'].forEach(ev => $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.remove('over'); }));
+$('drop').addEventListener('drop', e => loadFile(e.dataTransfer.files[0]));
+
+// ---- Controls
+$('preset').onchange = setSize;
+$('zoom').oninput = e => { state.zoom = +e.target.value; draw(); };
+$('rot').oninput = e => { state.rot = +e.target.value; $('rotv').textContent = state.rot + '°'; draw(); };
+$('bri').oninput = e => { state.bri = +e.target.value; draw(); };
+$('reset').onclick = () => { fit(); draw(); };
+view.addEventListener('wheel', e => {
+  e.preventDefault();
+  state.zoom = Math.min(4, Math.max(0.3, state.zoom * (e.deltaY < 0 ? 1.05 : 0.95)));
+  $('zoom').value = state.zoom; draw();
+}, { passive:false });
+
+// drag + pinch via pointer events
+const pts = new Map(); let pinchD = 0;
+view.addEventListener('pointerdown', e => { view.setPointerCapture(e.pointerId); pts.set(e.pointerId, e); });
+view.addEventListener('pointerup', e => { pts.delete(e.pointerId); pinchD = 0; });
+view.addEventListener('pointercancel', e => { pts.delete(e.pointerId); pinchD = 0; });
+view.addEventListener('pointermove', e => {
+  if (!pts.has(e.pointerId)) return;
+  const prev = pts.get(e.pointerId);
+  const r = view.getBoundingClientRect(), k = view.width / r.width;
+  pts.set(e.pointerId, e);
+  if (pts.size === 2) {
+    const [a, b] = [...pts.values()];
+    const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    if (pinchD) { state.zoom = Math.min(4, Math.max(0.3, state.zoom * d / pinchD)); $('zoom').value = state.zoom; }
+    pinchD = d;
+  } else {
+    state.x += (e.clientX - prev.clientX) * k;
+    state.y += (e.clientY - prev.clientY) * k;
+  }
+  draw();
+});
+
+// ---- Clothing controls + AI auto-fit
+$('cloth').onchange = e => {
+  state.cloth = e.target.value; $('clothOpts').hidden = state.cloth === 'none';
+  if (state.cloth === 'suit') { state.clothColor = '#1f2a44'; $('clothColor').value = state.clothColor; }
+  draw();
+};
+$('clothColor').oninput = e => { state.clothColor = e.target.value; draw(); };
+$('ny').oninput = e => { state.ny = +e.target.value; draw(); };
+$('nw').oninput = e => { state.nw = +e.target.value; draw(); };
+
+// map a point given as fractions of the source image to preview-canvas fractions
+function imgToCanvas(fx, fy) {
+  const s = state.baseScale * state.zoom, a = state.rot * Math.PI / 180;
+  const dx = (fx - 0.5) * state.img.width * s, dy = (fy - 0.5) * state.img.height * s;
+  return [(view.width / 2 + state.x + dx * Math.cos(a) - dy * Math.sin(a)) / view.width,
+          (view.height / 2 + state.y + dx * Math.sin(a) + dy * Math.cos(a)) / view.height];
+}
+(window.claude?.use?.('sample') || Promise.resolve(null)).then(async sample => {
+  const lim = sample && await sample.limits().catch(() => null);
+  if (!lim?.images) return;
+  const btn = $('aifit'); btn.dataset.ready = '1'; btn.disabled = !state.img;
+  btn.onclick = async () => {
+    btn.disabled = true; $('status').textContent = 'Claude is looking at your photo…';
+    try {
+      const c = document.createElement('canvas'), k = Math.min(1, 768 / Math.max(state.img.width, state.img.height));
+      c.width = state.img.width * k; c.height = state.img.height * k;
+      c.getContext('2d').drawImage(state.img, 0, 0, c.width, c.height);
+      const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.85));
+      const r = await sample.json(
+        'The attached image is a portrait photo of one person. Locate three things and give each as a fraction of the image ' +
+        '(x from 0 at the left to 1 at the right, y from 0 at the top to 1 at the bottom). ' +
+        'chinY = y of the bottom of the chin. neckLeftX and neckRightX = x of the left and right edges of the neck just below the chin. ' +
+        'Reply with ONLY JSON: {"chinY":0.0,"neckLeftX":0.0,"neckRightX":0.0}',
+        { images: [blob], modelTier: 'quick', cache: false });
+      if (![r.chinY, r.neckLeftX, r.neckRightX].every(v => typeof v === 'number' && v > 0 && v < 1)) throw new Error('bad');
+      const neckPx = Math.abs(r.neckRightX - r.neckLeftX) * state.img.width * state.baseScale * state.zoom / view.width;
+      const [, cy] = imgToCanvas(0.5, r.chinY);
+      state.nw = Math.min(0.6, Math.max(0.15, neckPx * 1.15));
+      state.ny = Math.min(0.95, Math.max(0.55, cy + state.nw * 0.35 * view.width / view.height));
+      $('ny').value = state.ny; $('nw').value = state.nw; draw();
+      $('status').textContent = 'Fitted by AI – fine-tune with the sliders if needed.';
+    } catch (e) {
+      $('status').textContent = 'AI auto-fit unavailable – use the sliders to place the neckline.';
+    }
+    btn.disabled = false;
+  };
+});
+
+// ---- Background removal (optional, downloads a model from CDN on first use)
+$('rmbg').onclick = async () => {
+  const btn = $('rmbg'); btn.disabled = true;
+  $('status').textContent = 'Loading AI model (first time may take a minute)…';
+  try {
+    const mod = await import('https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.5/+esm');
+    const c = document.createElement('canvas');
+    c.width = state.img.width; c.height = state.img.height;
+    c.getContext('2d').drawImage(state.img, 0, 0);
+    const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+    const out = await mod.removeBackground(blob);
+    const img = new Image();
+    img.onload = () => { state.img = img; draw(); $('status').textContent = 'Background removed – pick any background colour.'; };
+    img.src = URL.createObjectURL(out);
+  } catch (err) {
+    console.error(err);
+    $('status').textContent = 'Background removal unavailable (needs internet). Use a plain-wall photo instead.';
+  }
+  btn.disabled = false;
+};
+
+// ---- Export
+function outCanvas() {
+  const c = document.createElement('canvas');
+  c.width = mmToPx(state.mm[0]); c.height = mmToPx(state.mm[1]);
+  render(c.getContext('2d'), c.width, c.height, false);
+  return c;
+}
+function save(canvas, name) {
+  canvas.toBlob(async b => {
+    // Inside the Claude artifact viewer, plain download links are blocked: use the downloads capability.
+    try {
+      const dl = window.claude && await window.claude.use('downloads');
+      if (dl) {
+        try { await dl.save({ filename: name, data: b }); }
+        catch (e) { if (e && e.code !== 'declined') $('status').textContent = 'Save failed: ' + (e.message || e.code); }
+        return;
+      }
+    } catch (e) { /* fall through to normal download */ }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(b); a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }, 'image/png');
+}
+$('dl').onclick = () => save(outCanvas(), `id-photo-${state.mm[0]}x${state.mm[1]}mm.png`);
+$('sheet').onclick = () => {
+  const photo = outCanvas(), W = 6 * DPI, H = 4 * DPI, gap = 20;
+  const sheet = document.createElement('canvas'); sheet.width = W; sheet.height = H;
+  const g = sheet.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
+  const cols = Math.floor((W - gap) / (photo.width + gap)), rows = Math.floor((H - gap) / (photo.height + gap));
+  const ox = (W - (cols * (photo.width + gap) - gap)) / 2, oy = (H - (rows * (photo.height + gap) - gap)) / 2;
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const x = ox + c * (photo.width + gap), y = oy + r * (photo.height + gap);
+    g.drawImage(photo, x, y);
+    g.strokeStyle = '#bbb'; g.lineWidth = 1; g.strokeRect(x, y, photo.width, photo.height);
+  }
+  save(sheet, 'id-photo-print-sheet-4x6.png');
+};
+
+setSize();
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>
